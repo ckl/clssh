@@ -1,0 +1,7 @@
+# clssh server list. The format for this file is:
+# alias,host,port,login
+# Examples:
+
+home,123.45.67.890,22,ckl
+work,ssh.mywork.com,2222,ckl
+school,ssh.myschool.edu,22,ckl0242

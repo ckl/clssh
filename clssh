@@ -1,0 +1,192 @@
+#!/usr/bin/perl -s
+###############################################################################
+# Helper script for using ssh and scp, Reads an external file of servers with
+# login names and port. The -l parameter specifies a username to login as. This
+# parameter can also be specified in the server list, but you may use -l to
+# override it.
+#
+# The format of the external file must be comma separated in the form of:
+# alias,host,port,login
+#
+# Here is the typical usage of the script, followed by some examples:
+#
+# $ clssh [-l login] <ssh/sd/gt/mnt/umnt> host [file|mount point]
+# where
+#   ssh  -> ssh to the server
+#   sd   -> send file to host
+#   gt   -> get file from host
+#   host -> host name as found in server file
+#   file -> file to send/get from host if using sd or gt
+#   
+#   Notes: 
+#    * The -l parameter is required unless a login name is included in
+#      the server list file
+#    * The mnt option requires sshfs (fuse.sourceforge.net/sshfs.html)
+#    * The umnt option requires fusermount
+#    * For mnt/umnt options, a mount-point is necessary.
+#    * For umnt option, the host parameter is not needed.
+#
+# Examples:
+# $ clssh ssh home              # ssh to home server using login provided
+#                               # in the server file
+# $ clssh -l jake ssh home      # ssh to home server with login name jake
+#
+# $ clssh gt home ~/umn/cscixx/labreport1.doc
+#   ^ Downloads labreport1 into the current directory on local machine
+#
+# $ clssh sd home ~/.bashrc
+#   ^ Sends my .bashrc file from the local machine to home server
+#
+# $ clssh mnt home /path/to/mount
+#   ^ uses sshfs to mount home directory for login at the mount point
+#
+# $ clssh umnt /path/to/mount
+#   ^ unmounts whatever is mounted at this path
+###############################################################################
+use warnings;
+use strict;
+use POSIX;
+use 5.010;
+
+# location where server list is stored
+my $serverfile = "/home/chris/clsshrc";
+
+our ($l); 
+my $usage = "$0 [-l login] <ssh/sd/gt/mnt/umnt> <host> [file|path]\n";
+
+my $servers = &getservers ($serverfile);    # read the servers file into hash
+
+# if there's only 1 argument and it's either 'help' or servers', display it
+if (@ARGV == 1 && $ARGV[0] eq "help")    { &help;               exit; }
+if (@ARGV == 1 && $ARGV[0] eq "servers") { &servers ($servers); exit; }
+
+# are they passing login name from command line? 
+my $login;
+if ($l) { $login  = shift } 
+
+# get the action or die if there isn't one
+my $action  = shift || die "usage: $usage";
+
+# umounting doesn't require a host alias, so we can try to umount now
+if ($action eq "umnt") { &doumount (shift); exit; }
+    
+# get the host from command line, die if it's not in our servers hash
+my $hostarg = shift || die "usage: $usage";
+die "$0: unknown host $hostarg" if (not exists $servers->{$hostarg});
+
+my $host = $servers->{$hostarg}->{host};
+my $port = $servers->{$hostarg}->{port};
+$login   = $servers->{$hostarg}->{login} if (not $l); 
+
+die "$0: error: no login given" if not defined $login;
+
+# decide which action to take
+given ($action) {
+    when ("ssh")  { &dossh             }
+    when ("gt")   { &doscpget  (shift) }
+    when ("sd")   { &doscpsend (shift) }
+    when ("mnt")  { &domount   (shift) }
+    default       { die "$0: error: unknown action $action\n" }
+}
+
+
+# reads the servers file, stores it in a hash and returns it
+sub getservers
+{
+    my $serverfile = shift;
+    my $servers;
+    sysopen (my $SVR, $serverfile, O_RDONLY) or 
+        die "$0: error reading server file: $!\n";
+    foreach ( <$SVR> ) {
+        next if /^[#\s]/;
+        chomp;
+
+        my $numargs = (my ($alias, $host, $port, $login) = split ",");
+        # should be at least 3 parameters (alias, host, and port)
+        if ($numargs < 3) {
+            print "$0: invalid line $. in $serverfile, skipping...\n";
+            next;
+        }
+
+        $servers->{$alias} =
+            { host  => $host
+            , port  => $port
+            , login => $login
+            };
+    }
+    close $SVR;
+    $servers;
+}
+
+# initiates an ssh connection to the target server:port
+sub dossh
+{
+    print "initializing connection to [$host:$port] as $login\n";
+    system("ssh -l $login -p $port $host");
+}
+
+# retrieves a file from the target server and dumps it to current directory
+# note: be careful not to overwrite important files!
+sub doscpget
+{
+    my $file = shift || die "$0: no file specified for getting\n";
+    print "downloading [$file] from [$host] to ./\n";
+    system("scp -P $port $login\@$host:$file ./");
+}
+
+# sends a file to the target server in the user's home directory
+# note: be careful not to overwrite important files!
+sub doscpsend
+{
+    my $file = shift || die "$0: no file specified for sending\n";
+    print "sending [$file] to [$login\@$host:$port]\n";
+    system("scp -P $port $file $login\@$host:");
+}
+
+# mounts the host at the specified path. this checks for ssh keys, but
+# it should till work if the ssh keys don't exist.
+sub domount
+{
+    my $mnt = shift || die "$0: no mount patch specified\n";
+    print "mounting [$login\@$host:$port] at $mnt\n";
+    system("sshfs -p $port -o ssh_command='ssh -i ~/.ssh/id_rsa' $host:/home/$login $mnt");
+}
+
+# unmounts the specified mount point.
+sub doumount 
+{
+    my $mnt = shift || die "usage: $0 umnt <mount-point>\n";
+    print "$0: umounting $mnt\n";
+    system("fusermount -u $mnt");
+}
+
+# outputs a list of server aliases
+sub servers
+{
+    my $servers = shift; 
+    foreach my $alias (sort keys %$servers) { print "$alias " }
+    print "\n";
+}
+
+# display quick help
+sub help
+{
+    print "clssh [-l login] <ssh/sd/gt/mnt/umnt> host [file|mount-point]\n";
+    print "  where\n";
+    print "    ssh  -> ssh to the server\n";
+    print "    sd   -> send file to host\n";
+    print "    gt   -> get file from host\n";
+    print "    mnt  -> mounts host at mount-point\n";
+    print "    umnt -> unmounts mount-point\n";
+    print "    host -> host alias as found in server file\n";
+    print "    file -> file to send/get from host if using sd or gt\n";
+
+    print "Notes: \n";
+    print "* The -l parameter is required unless a login name is included in\n";
+    print "  the server list file\n";
+    print "* The mnt option requires sshfs (fuse.sourceforge.net/sshfs.html)\n";
+    print "* The umnt option requires fusermount\n";
+    print "* For mnt/umnt options, a mount-point is necessary.\n";
+    print "* For umnt option, the host parameter is not needed.\n";
+}
+

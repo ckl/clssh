@@ -1,0 +1,42 @@
+Helper script for using ssh and scp, Reads an external file of servers with
+login names and port. The -l parameter specifies a username to login as. This
+parameter can also be specified in the server list, but you may use -l to
+override it.
+
+The format of the external file must be comma separated in the form of:
+alias,host,port,login
+
+Here is the typical usage of the script, followed by some examples:
+
+$ clssh [-l login] <ssh/sd/gt/mnt/umnt> host [file|mount point]
+where
+  ssh  -> ssh to the server
+  sd   -> send file to host
+  gt   -> get file from host
+  host -> host name as found in server file
+  file -> file to send/get from host if using sd or gt
+  
+  Notes: 
+   * The -l parameter is required unless a login name is included in
+     the server list file
+   * The mnt option requires sshfs (fuse.sourceforge.net/sshfs.html)
+   * The umnt option requires fusermount
+   * For mnt/umnt options, a mount-point is necessary.
+   * For umnt option, the host parameter is not needed.
+
+Examples:
+  $ clssh ssh home              # ssh to home server using login provided
+                              # in the server file
+  $ clssh -l jake ssh home      # ssh to home server with login name jake
+
+  $ clssh gt home ~/umn/cscixx/labreport1.doc
+    ^ Downloads labreport1 into the current directory on local machine
+
+  $ clssh sd home ~/.bashrc
+    ^ Sends my .bashrc file from the local machine to home server
+
+  $ clssh mnt home /path/to/mount
+    ^ uses sshfs to mount home directory for login at the mount point
+
+  $ clssh umnt /path/to/mount
+    ^ unmounts whatever is mounted at this path
