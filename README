@@ -29,7 +29,7 @@ Examples:
                               # in the server file
   $ clssh -l jake ssh home      # ssh to home server with login name jake
 
-  $ clssh gt home ~/umn/cscixx/labreport1.doc
+  $ clssh gt home ~/school/cscixx/labreport1.doc
     ^ Downloads labreport1 into the current directory on local machine
 
   $ clssh sd home ~/.bashrc
